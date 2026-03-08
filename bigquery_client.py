@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ EXPECTED_SCHEMA = [
     bigquery.SchemaField("period", "STRING"),
     bigquery.SchemaField("sales", "NUMERIC"),
     bigquery.SchemaField("salesUnits", "STRING"),
+    bigquery.SchemaField("loaded_at", "TIMESTAMP"),
 ]
 
 
@@ -54,6 +56,10 @@ class BigQueryClient:
     def table_id(self) -> str:
         return f"{self.project_id}.{self.dataset}.{self.table}"
 
+    @property
+    def staging_table_id(self) -> str:
+        return f"{self.project_id}.{self.dataset}.{self.table}__staging"
+
     def ensure_table_and_schema(self) -> bool:
         """
         Ensure target table exists with expected schema.
@@ -79,21 +85,58 @@ class BigQueryClient:
             )
         return False
 
+    def _prepare_rows_for_load(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        loaded_at = datetime.now(timezone.utc).isoformat()
+        prepared_rows: list[dict[str, Any]] = []
+        for row in rows:
+            prepared_rows.append(
+                {
+                    "stateId": row.get("stateId"),
+                    "stateDescription": row.get("stateDescription"),
+                    "period": row.get("period"),
+                    "sales": row.get("sales"),
+                    "salesUnits": row.get("salesUnits"),
+                    "loaded_at": loaded_at,
+                }
+            )
+        return prepared_rows
+
+    def _merge_staging_into_target(self) -> None:
+        merge_sql = f"""
+        MERGE `{self.table_id}` T
+        USING `{self.staging_table_id}` S
+        ON T.stateId = S.stateId AND T.period = S.period
+        WHEN MATCHED THEN
+          UPDATE SET
+            stateDescription = S.stateDescription,
+            sales = S.sales,
+            salesUnits = S.salesUnits,
+            loaded_at = S.loaded_at
+        WHEN NOT MATCHED THEN
+          INSERT (stateId, stateDescription, period, sales, salesUnits, loaded_at)
+          VALUES (S.stateId, S.stateDescription, S.period, S.sales, S.salesUnits, S.loaded_at)
+        """
+        self.client.query(merge_sql).result()
+
     def load_rows(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
             return 0
 
+        prepared_rows = self._prepare_rows_for_load(rows)
+
         job_config = bigquery.LoadJobConfig(
-            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
             schema=EXPECTED_SCHEMA,
         )
 
         load_job = self.client.load_table_from_json(
-            rows,
-            self.table_id,
+            prepared_rows,
+            self.staging_table_id,
             job_config=job_config,
         )
         load_job.result()
+
+        self._merge_staging_into_target()
 
         table = self.client.get_table(self.table_id)
         return table.num_rows

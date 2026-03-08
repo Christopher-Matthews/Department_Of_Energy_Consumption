@@ -52,7 +52,7 @@ def main() -> None:
 
     if created_table:
         print(f"Created table {bq_client.table_id} with expected schema.")
-    print(f"Loaded {len(rows)} rows into {bq_client.table_id}.")
+    print(f"Upserted {len(rows)} rows into {bq_client.table_id}.")
     print(f"Table now contains {total_rows_in_table} rows.")
 
 

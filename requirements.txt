@@ -1,2 +1,2 @@
-google-cloud-bigquery
-python-dotenv
+google-cloud-bigquery==3.40.1
+python-dotenv==1.2.2
