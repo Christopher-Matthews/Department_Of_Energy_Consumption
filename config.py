@@ -22,6 +22,7 @@ class Settings:
     gcp_project_id: str | None = None
     bq_dataset: str | None = None
     bq_table: str | None = None
+    gcp_credentials_file: str = ".gcp_user_creds.json"
 
 
 def get_settings() -> Settings:
@@ -39,4 +40,5 @@ def get_settings() -> Settings:
         gcp_project_id=os.getenv("GCP_PROJECT_ID"),
         bq_dataset=os.getenv("BQ_DATASET"),
         bq_table=os.getenv("BQ_TABLE"),
+        gcp_credentials_file=os.getenv("GCP_CREDENTIALS_FILE", ".gcp_user_creds.json"),
     )
