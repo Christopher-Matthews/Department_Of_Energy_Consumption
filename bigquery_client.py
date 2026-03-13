@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import google.auth
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 
@@ -47,9 +48,14 @@ class BigQueryClient:
         if not cred_path.exists():
             raise FileNotFoundError(f"GCP credentials file not found: {cred_path}")
 
-        self.client = bigquery.Client.from_service_account_json(
-            str(cred_path),
-            project=project_id,
+        # Supports both local service-account key JSON and GitHub Actions
+        # Workload Identity credential files.
+        credentials, credential_project_id = google.auth.load_credentials_from_file(
+            str(cred_path)
+        )
+        self.client = bigquery.Client(
+            project=project_id or credential_project_id,
+            credentials=credentials,
         )
 
     @property
